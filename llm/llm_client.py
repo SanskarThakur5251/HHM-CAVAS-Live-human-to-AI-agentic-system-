@@ -1,22 +1,25 @@
 import requests
 import json
 import time
+import re
 
 from llm.prompt_builder import build_prompt
 
-INPUT_FILE = "outputs/second_output.json"
-OUTPUT_FILE = "outputs/final_output.json"
+INPUT_FILE = r"outputs/second_output.json"
+OUTPUT_FILE = r"outputs/final_output.json"
 
 LLM_URL = "http://localhost:8080/completion"
 
 processed_ids = set()
 
-context_buffer = []
-
 semantic_memory = []
 
 MAX_MEMORY = 5
 
+
+# ===============================
+# CONTEXT MEMORY
+# ===============================
 
 def collect_contextual_conversation(new_entry):
 
@@ -27,76 +30,151 @@ def collect_contextual_conversation(new_entry):
     if len(semantic_memory) > MAX_MEMORY:
         semantic_memory.pop(0)
 
-    combined_text = []
+    combined = []
 
     for item in semantic_memory:
-        combined_text.append(item["text"])
+        combined.append(item["text"])
 
-    return " ".join(combined_text)
-
-
-def update_context(text):
-
-    context_buffer.append(text)
-
-    if len(context_buffer) > 5:
-        context_buffer.pop(0)
+    return " ".join(combined)
 
 
-def get_context():
-
-    return " | ".join(context_buffer)
-
+# ===============================
+# CALL LLAMA SERVER
+# ===============================
 
 def call_llm(prompt):
 
     payload = {
         "prompt": prompt,
-        "max_tokens": 170,
-        "temperature": 0.4,
+        "max_tokens": 120,
+        "temperature": 0.1,
         "stop": ["###"]
     }
 
-    response = requests.post(
-        LLM_URL,
-        json=payload,
-        timeout=60
-    )
+    try:
 
-    result = response.json()
+        response = requests.post(
+            LLM_URL,
+            json=payload,
+            timeout=60
+        )
 
-    if "content" in result:
-        return result["content"]
+        result = response.json()
 
-    if "choices" in result:
-        return result["choices"][0]["text"]
+        print("\n===== RAW SERVER RESPONSE =====")
+        print(result)
 
-    return ""
+        if "content" in result:
+            return result["content"]
 
+        elif "choices" in result:
+            return result["choices"][0]["text"]
+
+        return ""
+
+    except Exception as e:
+
+        print("\nLLM Connection Error:")
+        print(e)
+
+        return ""
+
+
+# ===============================
+# JSON EXTRACTION
+# ===============================
 
 def validate_json(output):
 
     try:
-        return json.loads(output)
-    except:
-        return None
 
+        match = re.search(
+            r'\{.*\}',
+            output,
+            re.DOTALL
+        )
+
+        if match:
+
+            extracted = match.group()
+
+            print("\nExtracted JSON:")
+            print(extracted)
+
+            return json.loads(extracted)
+
+    except Exception as e:
+
+        print("\nJSON Validation Error:")
+        print(e)
+
+    return None
+
+
+# ===============================
+# SAVE OUTPUT
+# ===============================
+
+def save_output(data):
+
+    try:
+
+        with open(
+            OUTPUT_FILE,
+            "r"
+        ) as f:
+
+            existing = json.load(f)
+
+    except:
+
+        existing = []
+
+    existing.append(data)
+
+    with open(
+        OUTPUT_FILE,
+        "w"
+    ) as f:
+
+        json.dump(
+            existing,
+            f,
+            indent=4
+        )
+
+    print("\nSaved to final_output.json")
+
+
+# ===============================
+# MAIN LOOP
+# ===============================
 
 def process_llm():
 
     global processed_ids
 
+    print("\nLLM module started...\n")
+
     while True:
 
         try:
 
-            with open(INPUT_FILE, "r") as f:
+            with open(
+                INPUT_FILE,
+                "r"
+            ) as f:
+
                 data = json.load(f)
 
             for entry in data:
 
                 if "id" not in entry:
-                    print("Skipping old entry without ID")
+
+                    print(
+                        "Skipping old entry"
+                    )
+
                     continue
 
                 entry_id = entry["id"]
@@ -104,53 +182,136 @@ def process_llm():
                 if entry_id in processed_ids:
                     continue
 
-                combined_text = collect_contextual_conversation(entry)
 
-                update_context(combined_text)
+                print(
+                    "\n========================"
+                )
 
-                context = get_context()
+                print(
+                    "New Semantic Entry:"
+                )
+
+                print(entry)
+
+
+                combined_text = collect_contextual_conversation(
+                    entry
+                )
+
+                print(
+                    "\nConversation Context:"
+                )
+
+                print(
+                    combined_text
+                )
+
 
                 semantic_input = {
-                    "conversation": combined_text,
-                    "latest_entry": entry
+
+                    "conversation":
+                    combined_text,
+
+                    "latest_entry":
+                    entry
                 }
 
-                prompt = build_prompt(context, semantic_input)
+
+                prompt = build_prompt(
+                    "",
+                    semantic_input
+                )
+
+                print(
+                    "\nPrompt Sent:"
+                )
+
+                print(
+                    prompt[:500]
+                )
+
 
                 validated = None
 
-                for _ in range(3):
 
-                    output = call_llm(prompt)
+                for attempt in range(3):
 
-                    validated = validate_json(output)
+                    print(
+                        f"\nAttempt {attempt+1}"
+                    )
+
+                    output = call_llm(
+                        prompt
+                    )
+
+                    print(
+                        "\nLLM Output:"
+                    )
+
+                    print(
+                        output
+                    )
+
+                    validated = validate_json(
+                        output
+                    )
 
                     if validated:
+
                         break
+
 
                 if validated:
 
-                    validated["id"] = entry_id
-                    validated["timestamp"] = entry["timestamp"]
+                    validated[
+                        "id"
+                    ] = entry_id
 
-                    try:
-                        with open(OUTPUT_FILE, "r") as f:
-                            existing = json.load(f)
-                    except:
-                        existing = []
+                    validated[
+                        "timestamp"
+                    ] = entry[
+                        "timestamp"
+                    ]
 
-                    existing.append(validated)
 
-                    with open(OUTPUT_FILE, "w") as f:
-                        json.dump(existing, f, indent=4)
+                    print(
+                        "\nValidated Output:"
+                    )
 
-                    print("LLM:", validated)
+                    print(
+                        validated
+                    )
 
-                processed_ids.add(entry_id)
 
-                time.sleep(1)
+                    save_output(
+                        validated
+                    )
+
+                else:
+
+                    print(
+                        "\nCould not generate valid JSON"
+                    )
+
+
+                processed_ids.add(
+                    entry_id
+                )
+
+            time.sleep(
+                0.2
+            )
 
         except Exception as e:
-            print("LLM Error:", e)
 
-        time.sleep(2)
+            print(
+                "\nLLM Error:"
+            )
+
+            print(
+                e
+            )
+
+            time.sleep(
+                1
+            )

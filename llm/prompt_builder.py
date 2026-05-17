@@ -11,6 +11,7 @@ RULES:
 - No explanation
 - No markdown
 - No extra text
+- always analyze wether the input "text" is actually actionable or not. If not then do not generate any actionable output, just ignore it.
 - analyze the senteneces and identify the intent and entities regardless of the tag intent and other tags given in input.
 
 Supported intents:
