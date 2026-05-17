@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log
+
+# Runtime outputs
+outputs/*.json
+
+# STT models
+vosk-model*/
+*.zip
+
+# Semantic models
+models/
+*.safetensors
+
+# LLM models
+*.gguf
+*.bin
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Temporary files
+temp/
+cache/
+
+# Large files
+*.pt
+*.pth
